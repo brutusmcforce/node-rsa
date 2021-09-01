@@ -9,7 +9,7 @@ module.exports = {
     privateExport: function (key, options) {
         const nbuf = key.n.toBuffer();
 
-        let ebuf = Buffer.alloc(4)
+        let ebuf = Buffer.alloc(4);
         ebuf.writeUInt32BE(key.e, 0);
         //Slice leading zeroes
         while (ebuf[0] === 0) ebuf = ebuf.slice(1);
