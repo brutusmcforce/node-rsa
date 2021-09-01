@@ -1,183 +1,148 @@
-/**
- * PKCS1 padding and signature scheme
- */
+var ber = require('asn1').Ber;
+var _ = require('../utils')._;
+var utils = require('../utils');
 
- var BigInteger = require('../libs/jsbn');
- var crypt = require('crypto');
- var SIGN_INFO_HEAD = {
-     md2: Buffer.from('3020300c06082a864886f70d020205000410', 'hex'),
-     md5: Buffer.from('3020300c06082a864886f70d020505000410', 'hex'),
-     sha1: Buffer.from('3021300906052b0e03021a05000414', 'hex'),
-     sha224: Buffer.from('302d300d06096086480165030402040500041c', 'hex'),
-     sha256: Buffer.from('3031300d060960864801650304020105000420', 'hex'),
-     sha384: Buffer.from('3041300d060960864801650304020205000430', 'hex'),
-     sha512: Buffer.from('3051300d060960864801650304020305000440', 'hex'),
-     ripemd160: Buffer.from('3021300906052b2403020105000414', 'hex'),
-     rmd160: Buffer.from('3021300906052b2403020105000414', 'hex')
- };
- 
- var SIGN_ALG_TO_HASH_ALIASES = {
-     'ripemd160': 'rmd160'
- };
- 
- var DEFAULT_HASH_FUNCTION = 'sha256';
- 
- module.exports = {
-     isEncryption: true,
-     isSignature: true
- };
- 
- module.exports.makeScheme = function (key, options) {
-     function Scheme(key, options) {
-         this.key = key;
-         this.options = options;
-     }
- 
-     Scheme.prototype.maxMessageLength = function () {
-         if (this.options.encryptionSchemeOptions && this.options.encryptionSchemeOptions.padding == 3) {
-             return this.key.encryptedDataLength;
-         }
-         return this.key.encryptedDataLength - 11;
-     };
- 
-     /**
-      * Pad input Buffer to encryptedDataLength bytes, and return Buffer.from
-      * alg: PKCS#1
-      * @param buffer
-      * @returns {Buffer}
-      */
-     Scheme.prototype.encPad = function (buffer, options) {
-         options = options || {};
-         var filled;
-         if (buffer.length > this.key.maxMessageLength) {
-             throw new Error("Message too long for RSA (n=" + this.key.encryptedDataLength + ", l=" + buffer.length + ")");
-         }
- 
-         if (this.options.encryptionSchemeOptions && this.options.encryptionSchemeOptions.padding == 3) {
-             //RSA_NO_PADDING treated like JAVA left pad with zero character
-             filled = Buffer.alloc(this.key.maxMessageLength - buffer.length);
-             filled.fill(0);
-             return Buffer.concat([filled, buffer]);
-         }
- 
-         /* Type 1: zeros padding for private key encrypt */
-         if (options.type === 1) {
-             filled = Buffer.alloc(this.key.encryptedDataLength - buffer.length - 1);
-             filled.fill(0xff, 0, filled.length - 1);
-             filled[0] = 1;
-             filled[filled.length - 1] = 0;
- 
-             return Buffer.concat([filled, buffer]);
-         } else {
-             /* random padding for public key encrypt */
-             filled = Buffer.alloc(this.key.encryptedDataLength - buffer.length);
-             filled[0] = 0;
-             filled[1] = 2;
-             var rand = crypt.randomBytes(filled.length - 3);
-             for (var i = 0; i < rand.length; i++) {
-                 var r = rand[i];
-                 while (r === 0) { // non-zero only
-                     r = crypt.randomBytes(1)[0];
-                 }
-                 filled[i + 2] = r;
-             }
-             filled[filled.length - 1] = 0;
-             return Buffer.concat([filled, buffer]);
-         }
-     };
- 
-     /**
-      * Unpad input Buffer and, if valid, return the Buffer object
-      * alg: PKCS#1 (type 2, random)
-      * @param buffer
-      * @returns {Buffer}
-      */
-     Scheme.prototype.encUnPad = function (buffer, options) {
-         return buffer;
-     };
- 
-     Scheme.prototype.sign = function (buffer) {
-         var hashAlgorithm = this.options.signingSchemeOptions.hash || DEFAULT_HASH_FUNCTION;
-         hashAlgorithm = SIGN_ALG_TO_HASH_ALIASES[hashAlgorithm] || hashAlgorithm;
- 
-         var hasher = crypt.createHash(hashAlgorithm);
-         hasher.update(buffer);
-         var hash = this.pkcs1pad(hasher.digest(), hashAlgorithm);
-         var res = this.key.$doPrivate(new BigInteger(hash)).toBuffer(this.key.encryptedDataLength);
- 
-         return res;
-     };
- 
-     Scheme.prototype.verify = function (buffer, signature, signature_encoding) {
-         if (this.options.encryptionSchemeOptions && this.options.encryptionSchemeOptions.padding == 3) {
-             //RSA_NO_PADDING has no verify data
-             return false;
-         }
-         var hashAlgorithm = this.options.signingSchemeOptions.hash || DEFAULT_HASH_FUNCTION;
-         hashAlgorithm = SIGN_ALG_TO_HASH_ALIASES[hashAlgorithm] || hashAlgorithm;
- 
-         if (signature_encoding) {
-             signature = Buffer.from(signature, signature_encoding);
-         }
- 
-         var hasher = crypt.createHash(hashAlgorithm);
-         hasher.update(buffer);
-         var hash = this.pkcs1pad(hasher.digest(), hashAlgorithm);
-         var m = this.key.$doPublic(new BigInteger(signature));
- 
-         return m.toBuffer().toString('hex') == hash.toString('hex');
-     };
- 
-     /**
-      * PKCS#1 zero pad input buffer to max data length
-      * @param hashBuf
-      * @param hashAlgorithm
-      * @returns {*}
-      */
-     Scheme.prototype.pkcs0pad = function (buffer) {
-         var filled = Buffer.alloc(this.key.maxMessageLength - buffer.length);
-         filled.fill(0);
-         return Buffer.concat([filled, buffer]);
-     };
- 
-     Scheme.prototype.pkcs0unpad = function (buffer) {
-         var unPad;
-         if (typeof buffer.lastIndexOf == "function") { //patch for old node version
-             unPad = buffer.slice(buffer.lastIndexOf('\0') + 1, buffer.length);
-         } else {
-             unPad = buffer.slice(String.prototype.lastIndexOf.call(buffer, '\0') + 1, buffer.length);
-         }
- 
-         return unPad;
-     };
- 
-     /**
-      * PKCS#1 pad input buffer to max data length
-      * @param hashBuf
-      * @param hashAlgorithm
-      * @returns {*}
-      */
-     Scheme.prototype.pkcs1pad = function (hashBuf, hashAlgorithm) {
-         var digest = SIGN_INFO_HEAD[hashAlgorithm];
-         if (!digest) {
-             throw Error('Unsupported hash algorithm');
-         }
- 
-         var data = Buffer.concat([digest, hashBuf]);
- 
-         if (data.length + 10 > this.key.encryptedDataLength) {
-             throw Error('Key is too short for signing algorithm (' + hashAlgorithm + ')');
-         }
- 
-         var filled = Buffer.alloc(this.key.encryptedDataLength - data.length - 1);
-         filled.fill(0xff, 0, filled.length - 1);
-         filled[0] = 1;
-         filled[filled.length - 1] = 0;
- 
-         var res = Buffer.concat([filled, data]);
- 
-         return res;
-     };
- 
-     return new Scheme(key, options);
- }; 
+const PRIVATE_OPENING_BOUNDARY = '-----BEGIN RSA PRIVATE KEY-----';
+const PRIVATE_CLOSING_BOUNDARY = '-----END RSA PRIVATE KEY-----';
+
+const PUBLIC_OPENING_BOUNDARY = '-----BEGIN RSA PUBLIC KEY-----';
+const PUBLIC_CLOSING_BOUNDARY = '-----END RSA PUBLIC KEY-----';
+
+module.exports = {
+    privateExport: function (key, options) {
+        options = options || {};
+
+        var n = key.n.toBuffer();
+        var d = key.d.toBuffer();
+        var p = key.p.toBuffer();
+        var q = key.q.toBuffer();
+        var dmp1 = key.dmp1.toBuffer();
+        var dmq1 = key.dmq1.toBuffer();
+        var coeff = key.coeff.toBuffer();
+
+        var length = n.length + d.length + p.length + q.length + dmp1.length + dmq1.length + coeff.length + 512; // magic
+        var writer = new ber.Writer({size: length});
+
+        writer.startSequence();
+        writer.writeInt(0);
+        writer.writeBuffer(n, 2);
+        writer.writeInt(key.e);
+        writer.writeBuffer(d, 2);
+        writer.writeBuffer(p, 2);
+        writer.writeBuffer(q, 2);
+        writer.writeBuffer(dmp1, 2);
+        writer.writeBuffer(dmq1, 2);
+        writer.writeBuffer(coeff, 2);
+        writer.endSequence();
+
+        if (options.type === 'der') {
+            return writer.buffer;
+        } else {
+            return PRIVATE_OPENING_BOUNDARY + '\n' + utils.linebrk(writer.buffer.toString('base64'), 64) + '\n' + PRIVATE_CLOSING_BOUNDARY;
+        }
+    },
+
+    privateImport: function (key, data, options) {
+        options = options || {};
+        var buffer;
+
+        if (options.type !== 'der') {
+            if (Buffer.isBuffer(data)) {
+                data = data.toString('utf8');
+            }
+
+            if (_.isString(data)) {
+                var pem = utils.trimSurroundingText(data, PRIVATE_OPENING_BOUNDARY, PRIVATE_CLOSING_BOUNDARY)
+                    .replace(/\s+|\n\r|\n|\r$/gm, '');
+                buffer = Buffer.from(pem, 'base64');
+            } else {
+                throw Error('Unsupported key format');
+            }
+        } else if (Buffer.isBuffer(data)) {
+            buffer = data;
+        } else {
+            throw Error('Unsupported key format');
+        }
+
+        var reader = new ber.Reader(buffer);
+        reader.readSequence();
+        reader.readString(2, true); // just zero
+        key.setPrivate(
+            reader.readString(2, true),  // modulus
+            reader.readString(2, true),  // publicExponent
+            reader.readString(2, true),  // privateExponent
+            reader.readString(2, true),  // prime1
+            reader.readString(2, true),  // prime2
+            reader.readString(2, true),  // exponent1 -- d mod (p1)
+            reader.readString(2, true),  // exponent2 -- d mod (q-1)
+            reader.readString(2, true)   // coefficient -- (inverse of q) mod p
+        );
+    },
+
+    publicExport: function (key, options) {
+        options = options || {};
+
+        var n = key.n.toBuffer();
+        var length = n.length + 512; // magic
+
+        var bodyWriter = new ber.Writer({size: length});
+        bodyWriter.startSequence();
+        bodyWriter.writeBuffer(n, 2);
+        bodyWriter.writeInt(key.e);
+        bodyWriter.endSequence();
+
+        if (options.type === 'der') {
+            return bodyWriter.buffer;
+        } else {
+            return PUBLIC_OPENING_BOUNDARY + '\n' + utils.linebrk(bodyWriter.buffer.toString('base64'), 64) + '\n' + PUBLIC_CLOSING_BOUNDARY;
+        }
+    },
+
+    publicImport: function (key, data, options) {
+        options = options || {};
+        var buffer;
+
+        if (options.type !== 'der') {
+            if (Buffer.isBuffer(data)) {
+                data = data.toString('utf8');
+            }
+
+            if (_.isString(data)) {
+                var pem = utils.trimSurroundingText(data, PUBLIC_OPENING_BOUNDARY, PUBLIC_CLOSING_BOUNDARY)
+                    .replace(/\s+|\n\r|\n|\r$/gm, '');
+                buffer = Buffer.from(pem, 'base64');
+            }
+        } else if (Buffer.isBuffer(data)) {
+            buffer = data;
+        } else {
+            throw Error('Unsupported key format');
+        }
+
+        var body = new ber.Reader(buffer);
+        body.readSequence();
+        key.setPublic(
+            body.readString(0x02, true), // modulus
+            body.readString(0x02, true)  // publicExponent
+        );
+    },
+
+    /**
+     * Trying autodetect and import key
+     * @param key
+     * @param data
+     */
+    autoImport: function (key, data) {
+        // [\S\s]* matches zero or more of any character
+        if (/^[\S\s]*-----BEGIN RSA PRIVATE KEY-----\s*(?=(([A-Za-z0-9+/=]+\s*)+))\1-----END RSA PRIVATE KEY-----[\S\s]*$/g.test(data)) {
+            module.exports.privateImport(key, data);
+            return true;
+        }
+
+        if (/^[\S\s]*-----BEGIN RSA PUBLIC KEY-----\s*(?=(([A-Za-z0-9+/=]+\s*)+))\1-----END RSA PUBLIC KEY-----[\S\s]*$/g.test(data)) {
+            module.exports.publicImport(key, data);
+            return true;
+        }
+
+        return false;
+    }
+};
