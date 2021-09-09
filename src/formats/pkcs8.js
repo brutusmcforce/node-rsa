@@ -166,11 +166,6 @@ module.exports = {
         );
     },
 
-    /**
-     * Trying autodetect and import key
-     * @param key
-     * @param data
-     */
     autoImport: function (key, data) {
         if (/^[\S\s]*-----BEGIN PRIVATE KEY-----\s*(?=(([A-Za-z0-9+/=]+\s*)+))\1-----END PRIVATE KEY-----[\S\s]*$/g.test(data)) {
             module.exports.privateImport(key, data);

@@ -1,16 +1,8 @@
-/*!
- * RSA library for Node.js
- *
- * Author: rzcoder
- * License MIT
- */
-
 var rsa = require('./libs/rsa.js');
 var _ = require('./utils')._;
 var utils = require('./utils');
 var schemes = require('./schemes/schemes.js');
 var formats = require('./formats/formats.js');
-
 
 module.exports = (function () {
     var SUPPORTED_HASH_ALGORITHMS = {
@@ -31,10 +23,6 @@ module.exports = (function () {
         'public-der': 'pkcs8-public-der',
     };
 
-    /**
-     * @param key {string|buffer|object} Key in PEM format, or data for generate key {b: bits, e: exponent}
-     * @constructor
-     */
     function NodeRSA(key, format, options) {
         if (!(this instanceof NodeRSA)) {
             return new NodeRSA(key, format, options);
@@ -71,10 +59,6 @@ module.exports = (function () {
         this.setOptions(options);
     }
 
-    /**
-     * Set and validate options for key instance
-     * @param options
-     */
     NodeRSA.prototype.setOptions = function (options) {
         options = options || {};
         if (options.environment) {
@@ -139,13 +123,6 @@ module.exports = (function () {
         this.keyPair.setOptions(this.$options);
     };
 
-    /**
-     * Generate private/public keys pair
-     *
-     * @param bits {int} length key in bits. Default 2048.
-     * @param exp {int} public exponent. Default 65537.
-     * @returns {NodeRSA}
-     */
     NodeRSA.prototype.generateKeyPair = function (bits, exp) {
         bits = bits || 2048;
         exp = exp || 65537;
@@ -159,11 +136,6 @@ module.exports = (function () {
         return this;
     };
 
-    /**
-     * Importing key
-     * @param keyData {string|buffer|Object}
-     * @param format {string}
-     */
     NodeRSA.prototype.importKey = function (keyData, format) {
         if (!keyData) {
             throw Error("Empty key given");
@@ -182,10 +154,6 @@ module.exports = (function () {
         return this;
     };
 
-    /**
-     * Exporting key
-     * @param [format] {string}
-     */
     NodeRSA.prototype.exportKey = function (format) {
         format = format || DEFAULT_EXPORT_FORMAT;
         format = EXPORT_FORMAT_ALIASES[format] || format;
@@ -197,72 +165,34 @@ module.exports = (function () {
         return this.$cache[format];
     };
 
-    /**
-     * Check if key pair contains private key
-     */
     NodeRSA.prototype.isPrivate = function () {
         return this.keyPair.isPrivate();
     };
 
-    /**
-     * Check if key pair contains public key
-     * @param [strict] {boolean} - public key only, return false if have private exponent
-     */
     NodeRSA.prototype.isPublic = function (strict) {
         return this.keyPair.isPublic(strict);
     };
 
-    /**
-     * Check if key pair doesn't contains any data
-     */
     NodeRSA.prototype.isEmpty = function (strict) {
         return !(this.keyPair.n || this.keyPair.e || this.keyPair.d);
     };
 
-    /**
-     * Encrypting data method with public key
-     *
-     * @param buffer {string|number|object|array|Buffer} - data for encrypting. Object and array will convert to JSON string.
-     * @param encoding {string} - optional. Encoding for output result, may be 'buffer', 'binary', 'hex' or 'base64'. Default 'buffer'.
-     * @param source_encoding {string} - optional. Encoding for given string. Default utf8.
-     * @returns {string|Buffer}
-     */
     NodeRSA.prototype.encrypt = function (buffer, encoding, source_encoding) {
         return this.$$encryptKey(false, buffer, encoding, source_encoding);
     };
 
-    /**
-     * Decrypting data method with private key
-     *
-     * @param buffer {Buffer} - buffer for decrypting
-     * @param encoding - encoding for result string, can also take 'json' or 'buffer' for the automatic conversion of this type
-     * @returns {Buffer|object|string}
-     */
     NodeRSA.prototype.decrypt = function (buffer, encoding) {
         return this.$$decryptKey(false, buffer, encoding);
     };
 
-    /**
-     * Encrypting data method with private key
-     *
-     * Parameters same as `encrypt` method
-     */
     NodeRSA.prototype.encryptPrivate = function (buffer, encoding, source_encoding) {
         return this.$$encryptKey(true, buffer, encoding, source_encoding);
     };
 
-    /**
-     * Decrypting data method with public key
-     *
-     * Parameters same as `decrypt` method
-     */
     NodeRSA.prototype.decryptPublic = function (buffer, encoding) {
         return this.$$decryptKey(true, buffer, encoding);
     };
 
-    /**
-     * Encrypting data method with custom key
-     */
     NodeRSA.prototype.$$encryptKey = function (usePrivate, buffer, encoding, source_encoding) {
         try {
             var res = this.keyPair.encrypt(this.$getDataForEncrypt(buffer, source_encoding), usePrivate);
@@ -277,9 +207,6 @@ module.exports = (function () {
         }
     };
 
-    /**
-     * Decrypting data method with custom key
-     */
     NodeRSA.prototype.$$decryptKey = function (usePublic, buffer, encoding) {
         try {
             buffer = _.isString(buffer) ? Buffer.from(buffer, 'base64') : buffer;
@@ -295,14 +222,6 @@ module.exports = (function () {
         }
     };
 
-    /**
-     *  Signing data
-     *
-     * @param buffer {string|number|object|array|Buffer} - data for signing. Object and array will convert to JSON string.
-     * @param encoding {string} - optional. Encoding for output result, may be 'buffer', 'binary', 'hex' or 'base64'. Default 'buffer'.
-     * @param source_encoding {string} - optional. Encoding for given string. Default utf8.
-     * @returns {string|Buffer}
-     */
     NodeRSA.prototype.sign = function (buffer, encoding, source_encoding) {
         if (!this.isPrivate()) {
             throw Error("This is not private key");
@@ -317,15 +236,6 @@ module.exports = (function () {
         return res;
     };
 
-    /**
-     *  Verifying signed data
-     *
-     * @param buffer - signed data
-     * @param signature
-     * @param source_encoding {string} - optional. Encoding for given string. Default utf8.
-     * @param signature_encoding - optional. Encoding of given signature. May be 'buffer', 'binary', 'hex' or 'base64'. Default 'buffer'.
-     * @returns {*}
-     */
     NodeRSA.prototype.verify = function (buffer, signature, source_encoding, signature_encoding) {
         if (!this.isPublic()) {
             throw Error("This is not public key");
@@ -334,29 +244,14 @@ module.exports = (function () {
         return this.keyPair.verify(this.$getDataForEncrypt(buffer, source_encoding), signature, signature_encoding);
     };
 
-    /**
-     * Returns key size in bits
-     * @returns {int}
-     */
     NodeRSA.prototype.getKeySize = function () {
         return this.keyPair.keySize;
     };
 
-    /**
-     * Returns max message length in bytes (for 1 chunk) depending on current encryption scheme
-     * @returns {int}
-     */
     NodeRSA.prototype.getMaxMessageSize = function () {
         return this.keyPair.maxMessageLength;
     };
 
-    /**
-     * Preparing given data for encrypting/signing. Just make new/return Buffer object.
-     *
-     * @param buffer {string|number|object|array|Buffer} - data for encrypting. Object and array will convert to JSON string.
-     * @param encoding {string} - optional. Encoding for given string. Default utf8.
-     * @returns {Buffer}
-     */
     NodeRSA.prototype.$getDataForEncrypt = function (buffer, encoding) {
         if (_.isString(buffer) || _.isNumber(buffer)) {
             return Buffer.from('' + buffer, encoding || 'utf8');
@@ -369,12 +264,6 @@ module.exports = (function () {
         }
     };
 
-    /**
-     *
-     * @param buffer {Buffer} - decrypted data.
-     * @param encoding - optional. Encoding for result output. May be 'buffer', 'json' or any of Node.js Buffer supported encoding.
-     * @returns {*}
-     */
     NodeRSA.prototype.$getDecryptedData = function (buffer, encoding) {
         encoding = encoding || 'buffer';
 

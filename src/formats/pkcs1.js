@@ -126,11 +126,6 @@ module.exports = {
         );
     },
 
-    /**
-     * Trying autodetect and import key
-     * @param key
-     * @param data
-     */
     autoImport: function (key, data) {
         // [\S\s]* matches zero or more of any character
         if (/^[\S\s]*-----BEGIN RSA PRIVATE KEY-----\s*(?=(([A-Za-z0-9+/=]+\s*)+))\1-----END RSA PRIVATE KEY-----[\S\s]*$/g.test(data)) {
